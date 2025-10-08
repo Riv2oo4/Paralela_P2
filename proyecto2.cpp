@@ -80,4 +80,50 @@ int main(int argc, char** argv) {
         if ((int)target_suffix.size()!=L) target_suffix.resize(L,'a');
     }
 
+    // ---------- Bcast ----------
+    MPI_Bcast(&L,1,MPI_INT,0,MPI_COMM_WORLD);
+    MPI_Bcast(&check_every,1,MPI_UNSIGNED_LONG_LONG,0,MPI_COMM_WORLD);
+    MPI_Bcast(&batch_size,1,MPI_UNSIGNED_LONG_LONG,0,MPI_COMM_WORLD);
+    int wm = (work_mode=="stride")?1:0;
+    MPI_Bcast(&wm,1,MPI_INT,0,MPI_COMM_WORLD);
+    MPI_Bcast(&permute,1,MPI_INT,0,MPI_COMM_WORLD);
+
+    const int MAXS=256;
+    char pbuf[MAXS]={0}, tbuf[MAXS]={0};
+    if(rank==0){ strncpy(pbuf,prefix.c_str(),MAXS-1); strncpy(tbuf,target_suffix.c_str(),MAXS-1); }
+    MPI_Bcast(pbuf,MAXS,MPI_CHAR,0,MPI_COMM_WORLD);
+    MPI_Bcast(tbuf,MAXS,MPI_CHAR,0,MPI_COMM_WORLD);
+    prefix=string(pbuf); target_suffix=string(tbuf);
+
+    //tamaño del espacio
+    unsigned long long base = (unsigned long long)ALPH.size();
+    unsigned long long N=1; for(int i=0;i<L;++i) N*=base;
+
+    //parámetros de permutación
+    unsigned long long a_global = choose_coprime(N);
+    unsigned long long b_global = (unsigned long long)(rank*1315423911u) % N;
+
+    //división de trabajo
+    unsigned long long my_start=0,my_end=0,step=1;
+    if (wm==0){
+        if(rank==0){
+            vector<unsigned long long> starts(size), ends(size);
+            unsigned long long q=N/size, r=N%size;
+            for(int rk=0; rk<size; ++rk){
+                unsigned long long s=(unsigned long long)rk*q + min<unsigned long long>(rk,r);
+                unsigned long long e=s + q + (rk<r?1ULL:0ULL);
+                starts[rk]=s; ends[rk]=e;
+            }
+            MPI_Scatter(starts.data(),1,MPI_UNSIGNED_LONG_LONG,&my_start,1,MPI_UNSIGNED_LONG_LONG,0,MPI_COMM_WORLD);
+            MPI_Scatter(ends.data(),1,MPI_UNSIGNED_LONG_LONG,&my_end,1,MPI_UNSIGNED_LONG_LONG,0,MPI_COMM_WORLD);
+        }else{
+            MPI_Scatter(nullptr,1,MPI_UNSIGNED_LONG_LONG,&my_start,1,MPI_UNSIGNED_LONG_LONG,0,MPI_COMM_WORLD);
+            MPI_Scatter(nullptr,1,MPI_UNSIGNED_LONG_LONG,&my_end,1,MPI_UNSIGNED_LONG_LONG,0,MPI_COMM_WORLD);
+        }
+        step = 1;
+    }else{
+        my_start = rank;
+        my_end   = N;
+        step     = size;
+    }
 }
